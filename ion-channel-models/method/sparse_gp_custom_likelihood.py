@@ -56,9 +56,9 @@ def _create_theano_likelihood_graph(data, t, ind_t, n_time, n_inducing_time, app
     rho = tt.dscalar('rho')
     ker_sigma = tt.dscalar('ker_sigma')
     sigma = tt.dscalar('sigma')
-    time = theano.tensor.as_tensor_variable(t)#tt.dmatrix('time')
-    inducing_time = theano.tensor.as_tensor_variable(ind_t)#tt.dmatrix('inducing_time')
-    y = theano.tensor.as_tensor_variable(data)#tt.dvector('y')
+    time = theano.tensor.as_tensor_variable(t)
+    inducing_time = theano.tensor.as_tensor_variable(ind_t)
+    y = theano.tensor.as_tensor_variable(data)
     current = tt.dvector('current')
 
     cov_func = RbfKernel(rho, ker_sigma)

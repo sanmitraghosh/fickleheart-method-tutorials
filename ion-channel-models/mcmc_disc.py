@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import pints
 import pints.io
 import pints.plot
+import pymc3 as pm
 
 import model as m
 import parametertransform
@@ -19,11 +20,11 @@ from sparse_gp_custom_likelihood import DiscrepancyLogLikelihood
 """
 Run fit.
 """
-
+print('Using PyMC3 version: ',str(pm.__version__))
 model_list = ['A', 'B', 'C']
 
 try:
-    which_model = sys.argv[1] 
+    which_model = 'A'#sys.argv[1] 
 except:
     print('Usage: python %s [str:which_model]' % os.path.basename(__file__))
     sys.exit()
@@ -95,7 +96,7 @@ model.set_fixed_form_voltage_protocol(protocol, protocol_times)
 # Create Pints stuffs
 inducing_times = times[::1000] #Note to Chon: These are the inducing or speudo training points for the FITC GP
 problem = pints.SingleOutputProblem(model, times, data)
-loglikelihood = DiscrepancyLogLikelihood(problem, inducing_times, downsample=100) #Note to Chon: downsample=100<--change this to 1 or don't use this option
+loglikelihood = DiscrepancyLogLikelihood(problem, inducing_times, downsample=None) #Note to Chon: downsample=100<--change this to 1 or don't use this option
 logmodelprior = LogPrior[info_id](transform_to_model_param,
         transform_from_model_param)
 
@@ -115,7 +116,7 @@ initial_ker_sigma = np.log(5.0) # Initialise Kernel hyperparameter \ker_sigma
 
 priorparams = np.copy(info.base_param)
 transform_priorparams = transform_from_model_param(priorparams)
-priorparams = np.hstack((priorparams, noise_sigma, initial_rho, initial_ker_sigma))
+priorparams = np.hstack((priorparams, np.exp(noise_sigma), np.exp(initial_rho), np.exp(initial_ker_sigma)))
 transform_priorparams = np.hstack((transform_priorparams, noise_sigma, initial_rho, initial_ker_sigma))
 print('Posterior at prior parameters: ',
         logposterior(transform_priorparams))
@@ -126,7 +127,7 @@ for _ in range(10):
 # Load fitting results
 calloaddir = './out/' + info_id
 load_seed = 542811797
-fit_idx = [1]#, 2, 3]
+fit_idx = [1, 2, 3]
 transform_x0_list = []
 
 print('MCMC starting point: ')
@@ -167,7 +168,7 @@ chains_final = chains[:, int(0.5 * n_iter)::5, :]
 chains_param = chains_param[:, int(0.5 * n_iter)::5, :]
 
 transform_x0 = transform_x0_list[0]
-x0 = np.append(transform_to_model_param(transform_x0[:-1]), transform_x0[-1])
+x0 = np.append(transform_to_model_param(transform_x0[:-3]), np.exp(transform_x0[-3:]))
 
 pints.plot.pairwise(chains_param[0], kde=False, ref_parameters=x0)
 plt.savefig('%s/%s-fig1.png' % (savedir, saveas))
