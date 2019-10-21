@@ -15,8 +15,7 @@ import statsmodels.api as sm
 import random 
 from sklearn.externals import joblib
 from statsmodels.tsa.arima_process import arma2ma
-from statsmodels.tsa.tsatools import _ar_transparams, _ar_invtransparams, _ma_transparams, _ma_invtransparams
-                                     
+                                   
 
 import model as m
 import parametertransform
@@ -107,7 +106,7 @@ model.set_fixed_form_voltage_protocol(protocol, protocol_times)
 
 # Fit an armax model to get ballpark estmates of starting arma parameters
 # I have hard-coded to an ARMA(2,2) model, maybe worth using user iputs
-transparams = False ################# <-----Changed 21/10 #####################
+transparams = True ################# <-----Changed 21/10 #####################
 debug = True
 if not debug:
 
@@ -134,15 +133,15 @@ logmodelprior = LogPrior[info_id](transform_to_model_param,
         transform_from_model_param)
 
 # Priors for discrepancy
-logarmaprior = ArmaNormalCentredLogPrior(armax_result, 0.25) # Note for Chon: Worth checking out more wider/narrower priors
+logarmaprior = ArmaNormalLogPrior(armax_result, 0.25) # Note for Chon: Worth checking out more wider/narrower priors
 
  
 logprior = pints.ComposedLogPrior(logmodelprior, logarmaprior)
 logposterior = pints.LogPosterior(loglikelihood, logprior)
 
 # Check logposterior is working fine
-init_arma_ar = _ar_transparams(armax_result.arparams) ################# <-----Changed 21/10 #####################
-init_arma_ma = _ma_transparams(armax_result.maparams) ################# <-----Changed 21/10 #####################
+init_arma_ar = armax_result.arparams ################# <-----Changed 21/10 #####################
+init_arma_ma = armax_result.maparams ################# <-----Changed 21/10 #####################
 init_arma = np.append(init_arma_ar, init_arma_ma)  ################# <-----Changed 21/10 #####################
 
 priorparams = np.copy(info.base_param)
