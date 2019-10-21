@@ -141,8 +141,8 @@ logprior = pints.ComposedLogPrior(logmodelprior, logarmaprior)
 logposterior = pints.LogPosterior(loglikelihood, logprior)
 
 # Check logposterior is working fine
-init_arma_ar = _ar_transparams(armax_result.arparams) ################# <-----Changed 21/10 #####################
-init_arma_ma = _ma_transparams(armax_result.maparams) ################# <-----Changed 21/10 #####################
+init_arma_ar = _ar_transparams(armax_result.arparams.copy()) ################# <-----Changed 21/10 #####################
+init_arma_ma = _ma_transparams(armax_result.maparams.copy()) ################# <-----Changed 21/10 #####################
 init_arma = np.append(init_arma_ar, init_arma_ma)  ################# <-----Changed 21/10 #####################
 
 priorparams = np.copy(info.base_param)
