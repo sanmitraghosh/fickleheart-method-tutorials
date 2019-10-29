@@ -5,18 +5,18 @@ sys.path.append('./method')
 import os
 import numpy as np
 import matplotlib
-matplotlib.use('Agg')
+#matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pints
 import pints.io
 import pints.plot
 import pymc3 as pm
-
+import random 
 import model as m
 import parametertransform
 import priors
 from priors import HalfNormalLogPrior, InverseGammaLogPrior
-from sparse_gp_custom_likelihood import DiscrepancyLogLikelihood
+from sparse_gp_custom_likelihood import DiscrepancyLogLikelihood, _create_theano_conditional_graph
 """
 Run fit.
 """
@@ -142,7 +142,7 @@ for i in fit_idx:
 # Run
 mcmc = pints.MCMCController(logposterior, len(transform_x0_list),
         transform_x0_list, method=pints.AdaptiveCovarianceMCMC)
-n_iter = 100000
+n_iter = 100
 mcmc.set_max_iterations(n_iter)
 mcmc.set_initial_phase_iterations(int(200)) # Note for Chon: Only use 100/200 iterations maximum for random walk and then switch to Adaptive
 mcmc.set_parallel(True)
@@ -164,8 +164,8 @@ pints.io.save_samples('%s/%s-chain.csv' % (savedir, saveas), *chains_param)
 
 # Plot
 # burn in and thinning
-chains_final = chains[:, int(0.5 * n_iter)::5, :]
-chains_param = chains_param[:, int(0.5 * n_iter)::5, :]
+chains_final = chains[:, int(0.5 * n_iter)::1, :]
+chains_param = chains_param[:, int(0.5 * n_iter)::1, :]
 
 transform_x0 = transform_x0_list[0]
 x0 = np.append(transform_to_model_param(transform_x0[:-3]), np.exp(transform_x0[-3:]))
@@ -177,3 +177,56 @@ plt.close('all')
 pints.plot.trace(chains_param, ref_parameters=x0)
 plt.savefig('%s/%s-fig2.png' % (savedir, saveas))
 plt.close('all')
+
+##############  GP DISCREPANCY PREDICTION FOR CHON #########################################################
+# Posterior predictive in light of the discontinuity GP. Like the ARMAX case we use the variance identity here.
+# Currently this is setup to use the same protocol for training and validation. Please change this accordingly.
+# How this works: Basically we want \int GP(Current_validation|Current_training, Data, gp_params, ode_params) d gp_params d ode_params .
+# We obtain this--->GP(Current_validation|Current_training, Data, gp_params, ode_params) as  Normal distribution, see ppc_mean, ppc_var, 
+# for a single sample of (gp_params, ode_params). To propagate th uncertainty fully I then use the same Variance identity that I used for ARMAX
+# to integrate out (gp_params, ode_params).
+
+
+ppc_samples = chains_param[0]
+gp_ppc_mean =[]
+gp_ppc_var = []
+
+
+training_data = data.reshape((-1,))
+t_training_protocol = times.reshape((-1,1)) 
+ind_t = inducing_times.reshape((-1,1))
+valid_times = times  #### <---Create this variable accordingly, now I am using the training protocol time
+t_valid_protocol = valid_times.reshape((-1,1)) 
+n_time = len(t_training_protocol)
+n_inducing_time = len(ind_t)
+ppc_sampler_mean, ppc_sampler_var = _create_theano_conditional_graph(training_data, t_training_protocol, ind_t, n_time, n_inducing_time, t_valid_protocol)
+nds = 3 ### Number of discrepancy params
+for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 40):
+        ode_params = transform_from_model_param(ppc_samples[ind, :-nds]) ### Expecting these parameters have been "transformed to model"
+        _sigma, _rho, _ker_sigma = ppc_samples[ind,-nds:] ### Expecting these to Untransformed by exponentiation earlier"
+        current_training_protocol = model.simulate(ode_params, times)
+        current_valid_protocol = model.simulate(ode_params, valid_times)
+        ppc_mean = ppc_sampler_mean(current_training_protocol,current_valid_protocol,_rho,_ker_sigma,_sigma)
+        ppc_var = ppc_sampler_var(current_training_protocol,current_valid_protocol,_rho,_ker_sigma,_sigma)
+        gp_ppc_mean.append(ppc_mean)
+        gp_ppc_var.append(ppc_var)
+
+gp_ppc_mean = np.array(gp_ppc_mean)
+gp_ppc_var = np.array(gp_ppc_var)
+ppc_mean = np.mean(gp_ppc_mean, axis=0)
+var1, var2, var3 = np.mean(gp_ppc_var, axis=0), np.mean(np.power(gp_ppc_mean,2), axis=0), np.power(np.mean(gp_ppc_mean, axis=0),2)#np.mean(gp_ppc_mean**2, axis=0), (np.mean(gp_ppc_mean, axis=0))**2
+ppc_sd = np.sqrt(var1 + var2 + var3)
+
+plt.figure(figsize=(8, 6))
+plt.plot(times, data, label='Model C')
+plt.plot(times, ppc_mean, label='Mean')
+
+plt.plot(times, ppc_mean + 2*ppc_sd, '-', color='blue',
+             lw=0.5, label='conf_int')
+plt.plot(times, ppc_mean - 2*ppc_sd, '-', color='blue',
+             lw=0.5)
+
+plt.legend()
+plt.xlabel('Time (ms)')
+plt.ylabel('Current (pA)')
+plt.show()

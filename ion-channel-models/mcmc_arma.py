@@ -173,7 +173,7 @@ for i in fit_idx:
 # Run
 mcmc = pints.MCMCController(logposterior, len(transform_x0_list),
         transform_x0_list, method=pints.AdaptiveCovarianceMCMC)
-n_iter = 10000 # Need higher iterations in my experience
+n_iter = 1000 # Need higher iterations in my experience
 mcmc.set_max_iterations(n_iter)
 mcmc.set_initial_phase_iterations(int(200)) # Note for Chon: Only use 100/200 iterations maximum for random walk and then switch to Adaptive
 mcmc.set_parallel(False)
@@ -213,12 +213,14 @@ plt.close('all')
 # That is let say that theta = (ode_params,arma_params) and p(theta|data) is the posterior
 # We want to evaluate the posterior predictive: E|armax_forecast|data|, Var|armax_forecast|data|, 
 # all expectation w.r.t p(theta|data). This can be done with the variance identitiy trick
+
 ppc_samples = chains_param[0]
 armax_mean =[]
 armax_sd = []
 pdic = []
 
-for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 1000):
+
+for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 400):
         ode_params = transform_from_model_param(ppc_samples[ind, :-n_arama])
         ode_sol = model.simulate(ode_params, times)
         armax_params = np.append(1.0,ppc_samples[ind, -n_arama:])
@@ -235,13 +237,19 @@ for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 1000):
                 pdic.append(ll)
                 armax_mean.append(mean)
                 armax_sd.append(sd)
-
+                #ppc_sim = stats.norm(mean, sd).rvs()
+                #armax_ppc_sim.append(ppc_sim)
+              
 armax_mean = np.array(armax_mean)
 armax_sd = np.array(armax_sd)
 ppc_mean = np.mean(armax_mean, axis=0)
 var1, var2, var3 = np.mean(armax_sd**2, axis=0), np.mean(armax_mean**2, axis=0), (np.mean(armax_mean, axis=0))**2
 ppc_sd = np.sqrt(var1 + var2 + var3)
-
+"""
+armax_ppc_sim = np.array(armax_ppc_sim)
+ppc_mean = np.mean(armax_ppc_sim,axis=0)
+ppc_sd = np.std(armax_ppc_sim,axis=0)
+"""
 plt.figure(figsize=(8, 6))
 plt.plot(times, data, label='Model C')
 plt.plot(times, ppc_mean, label='Mean')

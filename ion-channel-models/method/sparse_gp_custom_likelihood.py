@@ -108,6 +108,7 @@ def _create_theano_conditional_graph(data, t, ind_t, n_time, n_inducing_time, t_
         inducing_time = theano.tensor.as_tensor_variable(ind_t)
         y = theano.tensor.as_tensor_variable(data)
         current = tt.dvector('current')
+        current_new = tt.dvector('current_new')
 
         cov_func = RbfKernel(rho, ker_sigma)
 
@@ -131,7 +132,11 @@ def _create_theano_conditional_graph(data, t, ind_t, n_time, n_inducing_time, t_
         As = solve_lower(Luu, Kus)
         mu = current_new + tt.dot(tt.transpose(As), solve_upper(tt.transpose(L_B), c))
         C = solve_lower(L_B, As)
-
+        Kss = cov_func(t_new, diag=True)
+        var = Kss - tt.sum(tt.square(As), 0) + tt.sum(tt.square(C), 0)
+        var += sigma2
+        return [theano.function([current,current_new,rho,ker_sigma,sigma],mu,on_unused_input='ignore'), \
+        theano.function([current,current_new,rho,ker_sigma,sigma],var,on_unused_input='ignore')]
 class DiscrepancyLogLikelihood(pints.ProblemLogLikelihood):
     """
     This class defines a custom loglikelihood which implements a
@@ -154,6 +159,7 @@ class DiscrepancyLogLikelihood(pints.ProblemLogLikelihood):
         t = self._times[::self._downsample].reshape((-1,1)) 
         ind_t = self._inducing_times.reshape((-1,1))
         self._loglikelihood = _create_theano_likelihood_graph(data, t, ind_t, self._nt, self._nu)
+
         self._n_parameters = self._np + self._nds
         
         self._temperature = temperature
@@ -172,3 +178,4 @@ class DiscrepancyLogLikelihood(pints.ProblemLogLikelihood):
         else:
             return self._temperature*self._loglikelihood(sim_current,Utx_rho,Utx_ker_sigma,Utx_sigma)
     
+
