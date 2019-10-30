@@ -237,19 +237,14 @@ for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 400):
                 pdic.append(ll)
                 armax_mean.append(mean)
                 armax_sd.append(sd)
-                #ppc_sim = stats.norm(mean, sd).rvs()
-                #armax_ppc_sim.append(ppc_sim)
+
               
 armax_mean = np.array(armax_mean)
 armax_sd = np.array(armax_sd)
 ppc_mean = np.mean(armax_mean, axis=0)
 var1, var2, var3 = np.mean(armax_sd**2, axis=0), np.mean(armax_mean**2, axis=0), (np.mean(armax_mean, axis=0))**2
-ppc_sd = np.sqrt(var1 + var2 + var3)
-"""
-armax_ppc_sim = np.array(armax_ppc_sim)
-ppc_mean = np.mean(armax_ppc_sim,axis=0)
-ppc_sd = np.std(armax_ppc_sim,axis=0)
-"""
+ppc_sd = np.sqrt(var1 + var2 - var3)
+
 plt.figure(figsize=(8, 6))
 plt.plot(times, data, label='Model C')
 plt.plot(times, ppc_mean, label='Mean')

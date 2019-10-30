@@ -16,7 +16,7 @@ import model as m
 import parametertransform
 import priors
 from priors import HalfNormalLogPrior, InverseGammaLogPrior
-from sparse_gp_custom_likelihood import DiscrepancyLogLikelihood, _create_theano_conditional_graph
+from sparse_gp_custom_likelihood import DiscrepancyLogLikelihood, _create_theano_conditional_graph_voltage
 """
 Run fit.
 """
@@ -56,7 +56,6 @@ protocol = np.loadtxt('./protocol-time-series/sinewave.csv', skiprows=1,
 protocol_times = protocol[:, 0]
 protocol = protocol[:, 1]
 
-
 # Control fitting seed
 # fit_seed = np.random.randint(0, 2**30)
 fit_seed = 542811797
@@ -73,6 +72,7 @@ data = np.loadtxt(data_dir + '/' + data_file_name,
                   delimiter=',', skiprows=1)  # headers
 times = data[:, 0]
 data = data[:, 1]
+voltage = protocol#<-----New
 noise_sigma = np.log(np.std(data[:500]))
 
 print('Estimated noise level: ', noise_sigma)
@@ -94,25 +94,27 @@ LogPrior = {
 model.set_fixed_form_voltage_protocol(protocol, protocol_times)
 
 # Create Pints stuffs
-inducing_times = times[::1000] #Note to Chon: These are the inducing or speudo training points for the FITC GP
+inducing_times = times[::1000] 
+inducing_voltage = voltage[::1000] #<-----New
 problem = pints.SingleOutputProblem(model, times, data)
-loglikelihood = DiscrepancyLogLikelihood(problem, inducing_times, downsample=None) #Note to Chon: downsample=100<--change this to 1 or don't use this option
+loglikelihood = DiscrepancyLogLikelihood(problem, inducing_times, voltage=voltage, inducing_voltage=inducing_voltage, downsample=None) #<-----New
 logmodelprior = LogPrior[info_id](transform_to_model_param,
         transform_from_model_param)
 
-# Priors for discrepancy
-# I have transformed all the discrepancy priors as well
-lognoiseprior = HalfNormalLogPrior(sd=25,transform=True) # This will have considerable mass at the initial value
-logrhoprior = InverseGammaLogPrior(alpha=5,beta=5,transform=True) # As suggested in STAN manual
-logkersdprior = InverseGammaLogPrior(alpha=5,beta=5,transform=True) # As suggested in STAN manual
+
+lognoiseprior = HalfNormalLogPrior(sd=25,transform=True) 
+logrhoprior1 = InverseGammaLogPrior(alpha=5,beta=5,transform=True) #<-----New
+logrhoprior2 = InverseGammaLogPrior(alpha=5,beta=5,transform=True) #<-----New
+logrhoprior = pints.ComposedLogPrior(logrhoprior1, logrhoprior2) #<-----New
+logkersdprior = InverseGammaLogPrior(alpha=5,beta=5,transform=True) 
 
  
 logprior = pints.ComposedLogPrior(logmodelprior, lognoiseprior, logrhoprior, logkersdprior)
 logposterior = pints.LogPosterior(loglikelihood, logprior)
 
 # Check logposterior is working fine
-initial_rho = np.log(0.5) # Initialise Kernel hyperparameter \rho
-initial_ker_sigma = np.log(5.0) # Initialise Kernel hyperparameter \ker_sigma
+initial_rho = np.log([0.5,0.5]) #<-----New
+initial_ker_sigma = np.log(5.0) 
 
 priorparams = np.copy(info.base_param)
 transform_priorparams = transform_from_model_param(priorparams)
@@ -154,8 +156,8 @@ chains = mcmc.run()
 chains_param = np.zeros(chains.shape)
 for i, c in enumerate(chains):
     c_tmp = np.copy(c)
-    chains_param[i, :, :-3] = transform_to_model_param(c_tmp[:, :-3]) # First the model ones 
-    chains_param[i, :, -3:] = np.exp((c_tmp[:, -3:])) # Then the discrepancy ones
+    chains_param[i, :, :-4] = transform_to_model_param(c_tmp[:, :-4]) #<-----New 
+    chains_param[i, :, -4:] = np.exp((c_tmp[:, -4:])) #<-----New
     
     del(c_tmp)
 
@@ -168,7 +170,7 @@ chains_final = chains[:, int(0.5 * n_iter)::1, :]
 chains_param = chains_param[:, int(0.5 * n_iter)::1, :]
 
 transform_x0 = transform_x0_list[0]
-x0 = np.append(transform_to_model_param(transform_x0[:-3]), np.exp(transform_x0[-3:]))
+x0 = np.append(transform_to_model_param(transform_x0[:-4]), np.exp(transform_x0[-4:]))#<-----New
 
 pints.plot.pairwise(chains_param[0], kde=False, ref_parameters=x0)
 plt.savefig('%s/%s-fig1.png' % (savedir, saveas))
@@ -178,13 +180,7 @@ pints.plot.trace(chains_param, ref_parameters=x0)
 plt.savefig('%s/%s-fig2.png' % (savedir, saveas))
 plt.close('all')
 
-##############  GP DISCREPANCY PREDICTION FOR CHON #########################################################
-# Posterior predictive in light of the discontinuity GP. Like the ARMAX case we use the variance identity here.
-# Currently this is setup to use the same protocol for training and validation. Please change this accordingly.
-# How this works: Basically we want \int GP(Current_validation|Current_training, Data, gp_params, ode_params) d gp_params d ode_params .
-# We obtain this--->GP(Current_validation|Current_training, Data, gp_params, ode_params) as  Normal distribution, see ppc_mean, ppc_var, 
-# for a single sample of (gp_params, ode_params). To propagate th uncertainty fully I then use the same Variance identity that I used for ARMAX
-# to integrate out (gp_params, ode_params).
+
 import scipy.stats as stats
 
 ppc_samples = chains_param[0]
@@ -194,14 +190,24 @@ gp_ppc_var = []
 gp_ppc_sim = []
 training_data = data.reshape((-1,))
 t_training_protocol = times.reshape((-1,1)) 
+v_training_protocol = voltage.reshape((-1,1)) #<-----New
+x_training_protocol = np.concatenate((t_training_protocol, v_training_protocol),axis=1)#<-----New
 ind_t = inducing_times.reshape((-1,1))
-valid_times = times  #### <---Create this variable accordingly, now I am using the training protocol time
+ind_v = inducing_voltage.reshape((-1,1))#<-----New
+ind_x = np.concatenate((ind_t, ind_v),axis=1)#<-----New
+
+valid_times = times  
+valid_voltage = voltage  #<-----New, need to pass here the AP protocol
 t_valid_protocol = valid_times.reshape((-1,1)) 
-ppc_sampler_mean, ppc_sampler_var = _create_theano_conditional_graph(training_data, t_training_protocol, ind_t, t_valid_protocol)
-nds = 3 ### Number of discrepancy params
+v_valid_protocol = valid_voltage.reshape((-1,1)) 
+x_valid_protocol = np.concatenate((t_valid_protocol, v_valid_protocol),axis=1)
+
+ppc_sampler_mean, ppc_sampler_var = _create_theano_conditional_graph_voltage(training_data, x_training_protocol, ind_x, x_valid_protocol)
+nds = 4 #<-----New
 for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 40):
-        ode_params = transform_from_model_param(ppc_samples[ind, :-nds]) ### Expecting these parameters have been "transformed to model"
-        _sigma, _rho, _ker_sigma = ppc_samples[ind,-nds:] ### Expecting these to Untransformed by exponentiation earlier"
+        ode_params = transform_from_model_param(ppc_samples[ind, :-nds]) 
+        _sigma, _rho1, _rho2, _ker_sigma = ppc_samples[ind,-nds:] #<-----New
+        _rho = np.append(_rho1, _rho2)#<-----New
         current_training_protocol = model.simulate(ode_params, times)
         current_valid_protocol = model.simulate(ode_params, valid_times)
         ppc_mean = ppc_sampler_mean(current_training_protocol,current_valid_protocol,_rho,_ker_sigma,_sigma)

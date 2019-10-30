@@ -239,7 +239,7 @@ armax_mean = np.array(armax_mean)
 armax_sd = np.array(armax_sd)
 ppc_mean = np.mean(armax_mean, axis=0)
 var1, var2, var3 = np.mean(armax_sd**2, axis=0), np.mean(armax_mean**2, axis=0), (np.mean(armax_mean, axis=0))**2
-ppc_sd = np.sqrt(var1 + var2 + var3)
+ppc_sd = np.sqrt(var1 + var2 - var3)
 
 plt.figure(figsize=(8, 6))
 plt.plot(times, data, label='Model C')
