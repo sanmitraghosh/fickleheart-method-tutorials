@@ -16,7 +16,7 @@ import model as m
 import parametertransform
 import priors
 from priors import HalfNormalLogPrior, InverseGammaLogPrior
-from sparse_gp_custom_likelihood import DiscrepancyLogLikelihood, _create_theano_conditional_graph_voltage
+from sparse_gp_custom_likelihood_new import DiscrepancyLogLikelihood, _create_theano_conditional_graph_voltage
 """
 Run fit.
 """
@@ -72,7 +72,7 @@ data = np.loadtxt(data_dir + '/' + data_file_name,
                   delimiter=',', skiprows=1)  # headers
 times = data[:, 0]
 data = data[:, 1]
-voltage = protocol#<-----New
+voltage = protocol
 noise_sigma = np.log(np.std(data[:500]))
 
 print('Estimated noise level: ', noise_sigma)
@@ -94,18 +94,27 @@ LogPrior = {
 model.set_fixed_form_voltage_protocol(protocol, protocol_times)
 
 # Create Pints stuffs
-inducing_times = times[::1000] 
-inducing_voltage = voltage[::1000] #<-----New
+USE_PROBABILITY_WITH_VOLTAGE = False
+NUM_IND_THIN = 1000
+
 problem = pints.SingleOutputProblem(model, times, data)
-loglikelihood = DiscrepancyLogLikelihood(problem, inducing_times, voltage=voltage, inducing_voltage=inducing_voltage, downsample=None) #<-----New
+loglikelihood = DiscrepancyLogLikelihood(problem, voltage=voltage, num_ind_thin=NUM_IND_THIN, \
+                                use_open_prob=USE_PROBABILITY_WITH_VOLTAGE, downsample=None) 
 logmodelprior = LogPrior[info_id](transform_to_model_param,
         transform_from_model_param)
 
 
 lognoiseprior = HalfNormalLogPrior(sd=25,transform=True) 
-logrhoprior1 = InverseGammaLogPrior(alpha=5,beta=5,transform=True) #<-----New
-logrhoprior2 = InverseGammaLogPrior(alpha=5,beta=5,transform=True) #<-----New
-logrhoprior = pints.ComposedLogPrior(logrhoprior1, logrhoprior2) #<-----New
+if USE_PROBABILITY_WITH_VOLTAGE:
+        logrhoprior1 = InverseGammaLogPrior(alpha=5,beta=5,transform=True) 
+        logrhoprior2 = InverseGammaLogPrior(alpha=5,beta=5,transform=True) 
+        logrhoprior = pints.ComposedLogPrior(logrhoprior1, logrhoprior2) 
+        nds = 4 
+        initial_rho = np.log([0.5,0.5]) 
+else:
+        logrhoprior = InverseGammaLogPrior(alpha=5,beta=5,transform=True)
+        nds = 3
+        initial_rho = np.log(0.5)
 logkersdprior = InverseGammaLogPrior(alpha=5,beta=5,transform=True) 
 
  
@@ -113,7 +122,7 @@ logprior = pints.ComposedLogPrior(logmodelprior, lognoiseprior, logrhoprior, log
 logposterior = pints.LogPosterior(loglikelihood, logprior)
 
 # Check logposterior is working fine
-initial_rho = np.log([0.5,0.5]) #<-----New
+
 initial_ker_sigma = np.log(5.0) 
 
 priorparams = np.copy(info.base_param)
@@ -156,8 +165,8 @@ chains = mcmc.run()
 chains_param = np.zeros(chains.shape)
 for i, c in enumerate(chains):
     c_tmp = np.copy(c)
-    chains_param[i, :, :-4] = transform_to_model_param(c_tmp[:, :-4]) #<-----New 
-    chains_param[i, :, -4:] = np.exp((c_tmp[:, -4:])) #<-----New
+    chains_param[i, :, :-nds] = transform_to_model_param(c_tmp[:, :-nds]) 
+    chains_param[i, :, -nds:] = np.exp((c_tmp[:, -nds:])) 
     
     del(c_tmp)
 
@@ -170,7 +179,7 @@ chains_final = chains[:, int(0.5 * n_iter)::1, :]
 chains_param = chains_param[:, int(0.5 * n_iter)::1, :]
 
 transform_x0 = transform_x0_list[0]
-x0 = np.append(transform_to_model_param(transform_x0[:-4]), np.exp(transform_x0[-4:]))#<-----New
+x0 = np.append(transform_to_model_param(transform_x0[:-4]), np.exp(transform_x0[-4:]))
 
 pints.plot.pairwise(chains_param[0], kde=False, ref_parameters=x0)
 plt.savefig('%s/%s-fig1.png' % (savedir, saveas))
@@ -189,29 +198,43 @@ gp_ppc_var = []
 
 gp_ppc_sim = []
 training_data = data.reshape((-1,))
-t_training_protocol = times.reshape((-1,1)) 
-v_training_protocol = voltage.reshape((-1,1)) #<-----New
-x_training_protocol = np.concatenate((t_training_protocol, v_training_protocol),axis=1)#<-----New
-ind_t = inducing_times.reshape((-1,1))
-ind_v = inducing_voltage.reshape((-1,1))#<-----New
-ind_x = np.concatenate((ind_t, ind_v),axis=1)#<-----New
+
+v_training_protocol = voltage.reshape((-1,1)) 
+ind_v = v_training_protocol[::NUM_IND_THIN,:]
+
 
 valid_times = times  
-valid_voltage = voltage  #<-----New, need to pass here the AP protocol
-t_valid_protocol = valid_times.reshape((-1,1)) 
+valid_voltage = voltage 
 v_valid_protocol = valid_voltage.reshape((-1,1)) 
-x_valid_protocol = np.concatenate((t_valid_protocol, v_valid_protocol),axis=1)
 
-ppc_sampler_mean, ppc_sampler_var = _create_theano_conditional_graph_voltage(training_data, x_training_protocol, ind_x, x_valid_protocol)
-nds = 4 #<-----New
+ppc_sampler_mean, ppc_sampler_var = _create_theano_conditional_graph_voltage(training_data, \
+                                v_training_protocol, ind_v, v_valid_protocol, use_open_prob=USE_PROBABILITY_WITH_VOLTAGE)
+
 for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 40):
         ode_params = transform_from_model_param(ppc_samples[ind, :-nds]) 
-        _sigma, _rho1, _rho2, _ker_sigma = ppc_samples[ind,-nds:] #<-----New
-        _rho = np.append(_rho1, _rho2)#<-----New
+        if USE_PROBABILITY_WITH_VOLTAGE:
+                _sigma, _rho1, _rho2, _ker_sigma = ppc_samples[ind,-nds:] 
+                _rho = np.append(_rho1, _rho2)                
+        else:
+                _sigma, _rho, _ker_sigma = ppc_samples[ind,-nds:]                  
+
         current_training_protocol = model.simulate(ode_params, times)
+        op_training_protocol = current_training_protocol #<-----Change this to Open prob.
+        op_training_protocol=op_training_protocol[:,None]
+        ind_op_training_protocol=op_training_protocol[::NUM_IND_THIN,:]
         current_valid_protocol = model.simulate(ode_params, valid_times)
-        ppc_mean = ppc_sampler_mean(current_training_protocol,current_valid_protocol,_rho,_ker_sigma,_sigma)
-        ppc_var = ppc_sampler_var(current_training_protocol,current_valid_protocol,_rho,_ker_sigma,_sigma)
+        op_valid_protocol=current_valid_protocol #<-----Change this to Open prob.
+        op_valid_protocol = op_valid_protocol[:,None]
+        if USE_PROBABILITY_WITH_VOLTAGE:
+                ppc_mean = ppc_sampler_mean(current_training_protocol,current_valid_protocol,  \
+                        op_training_protocol, ind_op_training_protocol,op_valid_protocol, \
+                        _rho,_ker_sigma,_sigma)
+                ppc_var = ppc_sampler_var(current_training_protocol,current_valid_protocol,  \
+                        op_training_protocol, ind_op_training_protocol,op_valid_protocol, \
+                        _rho,_ker_sigma,_sigma)
+        else:
+                ppc_mean = ppc_sampler_mean(current_training_protocol,current_valid_protocol,_rho,_ker_sigma,_sigma)
+                ppc_var = ppc_sampler_var(current_training_protocol,current_valid_protocol,_rho,_ker_sigma,_sigma)
         gp_ppc_mean.append(ppc_mean)
         gp_ppc_var.append(ppc_var)
 

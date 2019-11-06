@@ -20,7 +20,7 @@ class GpCovariance(object):
     
     def __init__(self, lengthscale, kernelvariance):
         self.ls = lengthscale
-        self.sf2 = kernelvariance
+        self.sf2 = tt.square(kernelvariance)
     
     def square_dist(self, X, Xs):
         X = tt.mul(X, 1.0 / self.ls)

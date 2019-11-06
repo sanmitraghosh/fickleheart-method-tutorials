@@ -74,7 +74,7 @@ data = np.loadtxt(data_dir + '/' + data_file_name,
 times = data[:, 0]
 data = data[:, 1]
 noise_sigma = np.log(np.std(data[:500]))
-
+np.savetxt('../../time.txt',times)
 print('Estimated noise level: ', noise_sigma)
 
 model = m.Model(info.model_file,
