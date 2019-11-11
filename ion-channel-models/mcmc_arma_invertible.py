@@ -212,11 +212,12 @@ plt.close('all')
 # That is let say that theta = (ode_params,arma_params) and p(theta|data) is the posterior
 # We want to evaluate the posterior predictive: E|armax_forecast|data|, Var|armax_forecast|data|, 
 # all expectation w.r.t p(theta|data). This can be done with the variance identitiy trick
+import scipy.stats as stats
 ppc_samples = chains_param[0]
 armax_mean =[]
 armax_sd = []
 pdic = []
-
+armax_rmse = []
 for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 1000):
         ode_params = transform_from_model_param(ppc_samples[ind, :-n_arama])
         ode_sol = model.simulate(ode_params, times)
@@ -234,6 +235,10 @@ for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 1000):
                 pdic.append(ll)
                 armax_mean.append(mean)
                 armax_sd.append(sd)
+                #### This bits are for E[rmse] calculation ###
+                ### I am assuming you have a function rmse(data, prediction)
+                ppc_sample_given_all_params = stats.norm(mean,sd).rvs()
+                armax_rmse.append(rmse(data,ppc_sample_given_all_params))                
 
 armax_mean = np.array(armax_mean)
 armax_sd = np.array(armax_sd)
@@ -266,3 +271,8 @@ pdic = np.mean(pdic)
 pdic = 2.0*(armax_result.model.loglike_kalman(armax_params) - pdic)
 DIC = -2.0 * armax_result.model.loglike_kalman(armax_params) + 2*pdic
 print('DIC for ARMAX(2,2): ',DIC)
+
+### Calculate rmse ###
+armax_rmse = np.array(armax_rmse)
+expected_armax_rmse = np.mean(armax_rmse, axis=0)
+print("The calculated RMSE is: ", expected_armax_rmse)

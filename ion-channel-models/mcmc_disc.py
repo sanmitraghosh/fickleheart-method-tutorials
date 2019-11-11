@@ -192,6 +192,7 @@ gp_ppc_mean =[]
 gp_ppc_var = []
 
 gp_ppc_sim = []
+gp_rmse = []
 training_data = data.reshape((-1,))
 t_training_protocol = times.reshape((-1,1)) 
 ind_t = inducing_times.reshape((-1,1))
@@ -208,6 +209,11 @@ for ind in random.sample(range(0, np.size(ppc_samples, axis=0)), 40):
         ppc_var = ppc_sampler_var(current_training_protocol,current_valid_protocol,_rho,_ker_sigma,_sigma)
         gp_ppc_mean.append(ppc_mean)
         gp_ppc_var.append(ppc_var)
+        #### This bits are for E[rmse] calculation ###
+        ### I am assuming you have a function rmse(data, prediction)
+        ppc_sample_given_all_params = stats.norm(ppc_mean,np.sqrt(ppc_var)).rvs()
+        gp_rmse.append(rmse(current_training_protocol,ppc_sample_given_all_params))
+
 
 gp_ppc_mean = np.array(gp_ppc_mean)
 gp_ppc_var = np.array(gp_ppc_var)
@@ -229,3 +235,8 @@ plt.legend()
 plt.xlabel('Time (ms)')
 plt.ylabel('Current (pA)')
 plt.show()
+
+### Calculate rmse ###
+gp_rmse = np.array(gp_rmse)
+expected_gp_rmse = np.mean(gp_rmse, axis=0)
+print("The calculated RMSE is: ", expected_gp_rmse)
