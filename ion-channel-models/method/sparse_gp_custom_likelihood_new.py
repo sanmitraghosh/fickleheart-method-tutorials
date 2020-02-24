@@ -36,15 +36,36 @@ class GpCovariance(object):
                 tt.reshape(X2, (-1, 1)) + tt.reshape(Xs2, (1, -1))
             )
         return tt.clip(sqd, 0.0, np.inf)
+    
+    def euclidean_dist(self, X, Xs):
+        r2 = self.square_dist(X, Xs)
+        return tt.sqrt(r2 + 1e-12)
 
 class RbfKernel(GpCovariance):
-
     def __call__(self, X, Xs=None, diag=False):
 
         if diag==True:
             return self.sf2*tt.alloc(1.0, X.shape[0])
         else:
             return self.sf2*tt.exp(-0.5 * self.square_dist(X, Xs))
+
+class Matern32(GpCovariance):
+    def __call__(self, X, Xs=None, diag=False):
+
+        if diag==True:
+            return self.sf2*tt.alloc(1.0, X.shape[0])
+        else:
+            euclidean_dist = self.euclidean_dist(X, Xs)
+            return (1.0 + np.sqrt(3.0) * euclidean_dist) * tt.exp(-np.sqrt(3.0) * euclidean_dist)
+
+class Matern12(GpCovariance):
+    def __call__(self, X, Xs=None, diag=False):
+
+        if diag==True:
+            return self.sf2*tt.alloc(1.0, X.shape[0])
+        else:
+            euclidean_dist = self.euclidean_dist(X, Xs)
+            return tt.exp(-euclidean_dist)
 
 def _create_theano_likelihood_graph_voltage(data, X, ind_X, n_X, n_inducing_X, use_open_prob=False, approx='FITC'):
 
@@ -67,9 +88,22 @@ def _create_theano_likelihood_graph_voltage(data, X, ind_X, n_X, n_inducing_X, u
         rho = tt.dscalar('rho')
         V_O = V
         inducing_V_O = inducing_V
-
-    cov_func = RbfKernel(rho, ker_sigma)
-
+        
+### I have hardcoded the ekernel choices here #### <---@Chon, you might remove this hard coding        
+    kern_choice='rbf'
+    if kern_choice=='rbf':
+        ### This one is used in the paper ####
+        cov_func = RbfKernel(rho, ker_sigma)
+    elif kern_choice=='matern12':
+        ### This one will give rough process and should be used ####
+        cov_func = Matern12(rho, ker_sigma)
+    elif kern_choice =='matern32':
+        ### This one is a compromise between a rough and a smooth one ####
+        cov_func = Matern32(rho, ker_sigma)
+    elif kern_choice=='OU':
+        ### This one is exactly what the reviewer wanted ####
+        cov_func = Matern12(2.0*rho, ker_sigma)
+       
     sigma2 = tt.square(sigma)
     Kuu = cov_func(inducing_V_O)
     Kuf = cov_func(inducing_V_O, V_O)
@@ -137,8 +171,20 @@ def _create_theano_conditional_graph_voltage(data, X, ind_X, X_new, use_open_pro
             inducing_V_O = inducing_V   
             V_O_new = V_new   
               
-
-        cov_func = RbfKernel(rho, ker_sigma)
+### I have hardcoded the ekernel choices here #### <---@Chon, you might remove this hard coding        
+        kern_choice='rbf'
+        if kern_choice=='rbf':
+            ### This one is used in the paper ####
+            cov_func = RbfKernel(rho, ker_sigma)
+        elif kern_choice=='matern12':
+            ### This one will give rough process and should be used ####
+            cov_func = Matern12(rho, ker_sigma)
+        elif kern_choice =='matern32':
+            ### This one is a compromise between a rough and a smooth one ####
+            cov_func = Matern32(rho, ker_sigma)
+        elif kern_choice=='OU':
+            ### This one is exactly what the reviewer wanted ####
+            cov_func = Matern12(2.0*rho, ker_sigma)
 
         sigma2 = tt.square(sigma)
         Kuu = cov_func(inducing_V_O)
