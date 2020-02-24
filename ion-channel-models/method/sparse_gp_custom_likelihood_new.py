@@ -88,17 +88,17 @@ def _create_theano_likelihood_graph_voltage(data, X, ind_X, n_X, n_inducing_X, u
         rho = tt.dscalar('rho')
         V_O = V
         inducing_V_O = inducing_V
-        
+
 ### I have hardcoded the ekernel choices here #### <---@Chon, you might remove this hard coding        
     kern_choice='rbf'
     if kern_choice=='rbf':
         ### This one is used in the paper ####
         cov_func = RbfKernel(rho, ker_sigma)
     elif kern_choice=='matern12':
-        ### This one will give rough process and should be used ####
+        ### This one will give rough process (non-smooth) ####
         cov_func = Matern12(rho, ker_sigma)
     elif kern_choice =='matern32':
-        ### This one is a compromise between a rough and a smooth one ####
+        ### This one is a half-way house between a rough and a smooth one ####
         cov_func = Matern32(rho, ker_sigma)
     elif kern_choice=='OU':
         ### This one is exactly what the reviewer wanted ####
@@ -177,10 +177,10 @@ def _create_theano_conditional_graph_voltage(data, X, ind_X, X_new, use_open_pro
             ### This one is used in the paper ####
             cov_func = RbfKernel(rho, ker_sigma)
         elif kern_choice=='matern12':
-            ### This one will give rough process and should be used ####
+             ### This one will give rough process (non-smooth) ####
             cov_func = Matern12(rho, ker_sigma)
         elif kern_choice =='matern32':
-            ### This one is a compromise between a rough and a smooth one ####
+            ### This one is a half-way between a rough and a smooth one ####
             cov_func = Matern32(rho, ker_sigma)
         elif kern_choice=='OU':
             ### This one is exactly what the reviewer wanted ####
